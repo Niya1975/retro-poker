@@ -497,12 +497,67 @@ CARD IS 6 OR LESS
     for (let i = d.length - 1; i > 0; i--) { const j = randInt(i + 1); [d[i], d[j]] = [d[j], d[i]]; }
     return d;
   }
-  const SUIT_PATH = {
-    H: '<path d="M0,4.6 L-4.6,-0.4 A2.5,2.5 0 0 1 0,-3.4 A2.5,2.5 0 0 1 4.6,-0.4 Z"/>',
-    D: '<path d="M0,-5 L3.6,0 L0,5 L-3.6,0 Z"/>',
-    S: '<path d="M0,-5 L4.6,0.2 A2.5,2.5 0 0 1 0,3.2 A2.5,2.5 0 0 1 -4.6,0.2 Z"/><path d="M0,1 L1.9,5 L-1.9,5 Z"/>',
-    C: '<circle cx="0" cy="-2.6" r="2.3"/><circle cx="-2.6" cy="1.1" r="2.3"/><circle cx="2.6" cy="1.1" r="2.3"/><path d="M0,0 L1.8,5 L-1.8,5 Z"/>',
+  // Suit marks as hand-made pixel bitmaps ('#' = one dot) for the jaggy look of an 80s arcade screen.
+  const SUIT_BITMAP = {
+    H: ['..###.###..',
+        '.#########.',
+        '###########',
+        '###########',
+        '###########',
+        '.#########.',
+        '..#######..',
+        '...#####...',
+        '....###....',
+        '.....#.....'],
+    D: ['....#....',
+        '...###...',
+        '...###...',
+        '..#####..',
+        '.#######.',
+        '#########',
+        '.#######.',
+        '..#####..',
+        '...###...',
+        '...###...',
+        '....#....'],
+    S: ['.....#.....',
+        '....###....',
+        '...#####...',
+        '..#######..',
+        '.#########.',
+        '###########',
+        '###########',
+        '.###.#.###.',
+        '.....#.....',
+        '....###....',
+        '...#####...'],
+    C: ['....###....',
+        '...#####...',
+        '...#####...',
+        '.##.###.##.',
+        '###########',
+        '###########',
+        '.###.#.###.',
+        '.....#.....',
+        '....###....',
+        '...#####...'],
   };
+  // one path per suit: each horizontal run of dots becomes a rectangle, centred on (0,0), 1 unit = 1 dot
+  function bitmapPath(rows) {
+    const h = rows.length, w = rows[0].length;
+    let d = '';
+    rows.forEach((row, y) => {
+      for (let x = 0; x < w;) {
+        if (row[x] !== '#') { x++; continue; }
+        let e = x;
+        while (e < w && row[e] === '#') e++;
+        d += `M${x - w / 2} ${y - h / 2}h${e - x}v1h${x - e}z`;
+        x = e;
+      }
+    });
+    return `<path d="${d}" shape-rendering="crispEdges"/>`;
+  }
+  const SUIT_PATH = Object.fromEntries(Object.entries(SUIT_BITMAP).map(([s, rows]) => [s, bitmapPath(rows)]));
   const isRed = s => s === 'H' || s === 'D';
   const suitColor = s => isRed(s) ? '#e02424' : '#151515';
   function pip(s, x, y, scale = 1.35, flip = false) {
@@ -522,7 +577,7 @@ CARD IS 6 OR LESS
     9: [[L, 40], [R, 40], [L, 60], [R, 60], [C, 70], [L, 80], [R, 80], [L, 100], [R, 100]],
     10: [[L, 40], [R, 40], [C, 50], [L, 60], [R, 60], [L, 80], [R, 80], [C, 90], [L, 100], [R, 100]],
   };
-  const pipScale = n => n <= 6 ? 2.1 : n <= 8 ? 1.9 : 1.7;
+  const pipScale = n => n <= 6 ? 1.9 : n <= 8 ? 1.6 : 1.45;
   function faceFigure(r, s) {
     const skin = '#ffd9a8', robe = isRed(s) ? '#d8262a' : '#2848d0', trim = '#ffd640';
     let hat;
