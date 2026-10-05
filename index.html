@@ -305,7 +305,7 @@ CARD IS 6 OR LESS
   <div class="body">
     <h3>基本の流れ</h3>
     <ol>
-      <li><b>COIN</b> でクレジットを入れる</li>
+      <li><b>COIN</b> でクレジットを入れる（クレジットが最低 BET 未満のときだけ押せる）</li>
       <li><b>BET</b> で賭け額を選ぶ（BET 0 のまま DEAL すると前回の賭け額）</li>
       <li><b>DEAL</b> で5枚配られる</li>
       <li>残したいカードをタップするか <b>HOLD</b> を押す<span class="kbd">（キーボードは 1〜5）</span></li>
@@ -341,7 +341,7 @@ CARD IS 6 OR LESS
     { key: '2P', label: '2 PAIR',      color: 'var(--cyan)' },
   ];
   const DEFAULTS = {
-    startCredit: 1000, coinValue: 1000,
+    startCredit: 0, coinValue: 1000,
     betMin: 20, betMax: 1000, betStep: 20,
     pays: { RF: 500, SF: 200, '4K': 100, FH: 10, FL: 7, ST: 5, '3K': 3, '2P': 2 },
     csMode: 'auto', csMult: 200, csAmount: 20000,
@@ -505,17 +505,21 @@ CARD IS 6 OR LESS
   function pip(s, x, y, scale = 1.35, flip = false) {
     return `<g transform="translate(${x} ${y}) scale(${scale})${flip ? ' rotate(180)' : ''}" fill="${suitColor(s)}">${SUIT_PATH[s]}</g>`;
   }
+  // Large pips for small screens: columns at x 34 / 72 (centre 53), rows between y 40 and 100,
+  // leaving the top-left and bottom-right corners free for the big rank.
+  const L = 34, R = 72, C = 53;
   const PIPS = {
-    2: [[50, 32], [50, 108]],
-    3: [[50, 32], [50, 70], [50, 108]],
-    4: [[34, 32], [66, 32], [34, 108], [66, 108]],
-    5: [[34, 32], [66, 32], [50, 70], [34, 108], [66, 108]],
-    6: [[34, 32], [66, 32], [34, 70], [66, 70], [34, 108], [66, 108]],
-    7: [[34, 32], [66, 32], [50, 51], [34, 70], [66, 70], [34, 108], [66, 108]],
-    8: [[34, 32], [66, 32], [50, 51], [34, 70], [66, 70], [50, 89], [34, 108], [66, 108]],
-    9: [[34, 32], [66, 32], [34, 57], [66, 57], [50, 70], [34, 83], [66, 83], [34, 108], [66, 108]],
-    10: [[34, 32], [66, 32], [50, 45], [34, 57], [66, 57], [34, 83], [66, 83], [50, 95], [34, 108], [66, 108]],
+    2: [[C, 40], [C, 100]],
+    3: [[C, 40], [C, 70], [C, 100]],
+    4: [[L, 40], [R, 40], [L, 100], [R, 100]],
+    5: [[L, 40], [R, 40], [C, 70], [L, 100], [R, 100]],
+    6: [[L, 40], [R, 40], [L, 70], [R, 70], [L, 100], [R, 100]],
+    7: [[L, 40], [R, 40], [C, 55], [L, 70], [R, 70], [L, 100], [R, 100]],
+    8: [[L, 40], [R, 40], [C, 55], [L, 70], [R, 70], [C, 85], [L, 100], [R, 100]],
+    9: [[L, 40], [R, 40], [L, 60], [R, 60], [C, 70], [L, 80], [R, 80], [L, 100], [R, 100]],
+    10: [[L, 40], [R, 40], [C, 50], [L, 60], [R, 60], [L, 80], [R, 80], [C, 90], [L, 100], [R, 100]],
   };
+  const pipScale = n => n <= 6 ? 2.1 : n <= 8 ? 1.9 : 1.7;
   function faceFigure(r, s) {
     const skin = '#ffd9a8', robe = isRed(s) ? '#d8262a' : '#2848d0', trim = '#ffd640';
     let hat;
@@ -539,21 +543,33 @@ CARD IS 6 OR LESS
     if (!c) return backSVG();
     const col = suitColor(c.s);
     const label = RANK_LABEL[c.r] || String(c.r);
-    const fs = label.length > 1 ? 15 : 19, ls = label.length > 1 ? -2 : 0;
+    const two = label.length > 1;
+    const fs = two ? 20 : 26, ls = two ? -3 : 0, base = two ? 26 : 30;
+    const isFace = c.r >= 11 && c.r <= 13;
     let body;
-    if (c.r <= 10) body = PIPS[c.r].map(([x, y]) => pip(c.s, x, y, 1.35, y > 70)).join('');
-    else if (c.r === 14) body = pip(c.s, 50, 70, 3.6);
-    else {
+    if (c.r <= 10) {
+      body = PIPS[c.r].map(([x, y]) => pip(c.s, x, y, pipScale(c.r), y > 70)).join('');
+    } else if (c.r === 14) {
+      body = pip(c.s, C, 72, 4.4);
+    } else {
+      // the figure is drawn for a 22..78 x 20..120 frame; fit it into the narrower 30..86 x 12..128 frame
+      // so the left strip stays free for the big rank and suit
       const fig = faceFigure(c.r, c.s);
-      body = `<rect x="22" y="20" width="56" height="100" fill="#fff"/>
-        <g>${fig}</g><g transform="rotate(180 50 70)">${fig}</g>
-        <line x1="22" y1="70" x2="78" y2="70" stroke="#111" stroke-width="1"/>
-        <rect x="22" y="20" width="56" height="100" fill="none" stroke="#111" stroke-width="1.5"/>`;
+      body = `<g transform="matrix(1 0 0 1.16 8 -11.2)">
+          <rect x="22" y="20" width="56" height="100" fill="#fff"/>
+          <g>${fig}</g><g transform="rotate(180 50 70)">${fig}</g>
+          <line x1="22" y1="70" x2="78" y2="70" stroke="#111" stroke-width="1"/>
+          <rect x="22" y="20" width="56" height="100" fill="none" stroke="#111" stroke-width="1.3"/>
+        </g>`;
     }
-    const txt = rot => `<text x="4" y="21"${rot} font-family="'Press Start 2P',monospace" font-size="${fs}" letter-spacing="${ls}" fill="${col}">${label}</text>`;
+    // corner: big rank, plus a suit mark under it on court cards and aces (numbers show the rank only)
+    const corner = (isFace ? '<rect x="2" y="3" width="27" height="50" fill="#f7f5ee"/>' : '')
+      + `<text x="3" y="${base}" font-family="'Press Start 2P',monospace" font-size="${fs}" letter-spacing="${ls}" fill="${col}">${label}</text>`
+      + (isFace || c.r === 14 ? pip(c.s, 15, 43, 1.7) : '');
     return `<svg viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${label}${c.s}">
       <rect x="1" y="1" width="98" height="138" rx="6" fill="#f7f5ee" stroke="#c9c4b4" stroke-width="2"/>
-      ${body}${txt('')}${txt(' transform="rotate(180 50 70)"')}</svg>`;
+      ${body}
+      <g>${corner}</g><g transform="rotate(180 50 70)">${corner}</g></svg>`;
   }
   function backSVG() {
     // red lattice back with an original "P" badge
@@ -612,7 +628,7 @@ CARD IS 6 OR LESS
     const on = (id, v) => { const b = $(id); b.classList.toggle('on', v); b.disabled = !v; };
     const canDbl = state === 'dblask' && win < counterStopFor(lastBet);
     holdBtns.forEach(b => { b.classList.toggle('on', state === 'hold'); b.disabled = state !== 'hold'; });
-    on('coinBtn', state === 'attract' || state === 'hold');
+    on('coinBtn', canCoin());
     on('resetBtn', state === 'attract');
     on('betBtn', state === 'attract');
     on('takeBtn', state === 'dblask');
@@ -653,8 +669,10 @@ CARD IS 6 OR LESS
     if (flash) { void info.offsetWidth; info.classList.add('flash'); }
   }
 
+  // coins only between games, and only once credit can't cover the minimum bet
+  const canCoin = () => state === 'attract' && credit < settings.betMin;
   function addCoin() {
-    if (!(state === 'attract' || state === 'hold')) return;
+    if (!canCoin()) return;
     credit += settings.coinValue; saveCredit(); sfx.coin();
     meter(m => { m.coin += settings.coinValue; m.coinCount++; });
     if (state === 'attract') updateAttractText();
