@@ -175,20 +175,33 @@
   .b-small{ --c: #3fd8ff; }
   .b-deal { --c: #ffffff; }
   .key { display: block; font-size: 8px; opacity: .6; margin-top: 3px; }
-  .toolbar { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 50; }
-  .toolbar button { font-size: 10px; padding: 8px 10px; --c: #888; }
-
-  .help {
-    margin-top: 14px; font-family: system-ui, sans-serif; font-size: 13px;
-    color: #999; line-height: 1.7; max-width: 960px; width: 100%;
+  /* ---- slim top bar (HELP / RESET / SOUND) ---- */
+  .topbar { width: 100%; max-width: 960px; display: flex; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
+  .topbar button, .topbar button.on {
+    font-size: 9px; padding: 6px 10px; min-height: 0; border-radius: 6px; --c: #a4a4ac;
+    box-shadow: 0 2px 0 rgba(0,0,0,.55);
   }
-  .help b { color: #ddd; }
+  .topbar .b-help { --c: #ffd640; }
+
+  /* ---- how-to-play dialog ---- */
+  dialog.help {
+    width: min(560px, calc(100vw - 24px)); max-height: calc(100svh - 24px);
+    background: #0f1330; color: #e8e8f0; border: 2px solid #3a4ae0; border-radius: 12px;
+    padding: 0; font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.7;
+  }
+  dialog.help::backdrop { background: rgba(0,0,0,.7); }
+  .help h2 { font-family: 'Press Start 2P', monospace; font-size: 13px; color: var(--yellow); margin: 0; padding: 14px 16px; border-bottom: 1px solid #2a3170; }
+  .help .body { padding: 6px 16px 4px; }
+  .help h3 { font-size: 14px; color: var(--cyan); margin: 12px 0 2px; }
+  .help ol, .help ul { margin: 2px 0; padding-left: 20px; }
+  .help b { color: #fff; }
+  .help .foot { padding: 12px 16px 16px; text-align: right; }
+  .help .foot button { font-size: 10px; padding: 10px 18px; filter: none; --c: #ffd640; }
 
   /* タッチ端末ではキー表示を隠し、押しやすい高さに */
   @media (hover: none) and (pointer: coarse) {
-    .key { display: none; }
-    button { min-height: 48px; }
-    .help .kbd { display: none; }
+    .key, .kbd { display: none; }
+    .panel button { min-height: 48px; }
   }
   /* スマホ横向き：画面とボタンを左右に並べる */
   @media (orientation: landscape) and (max-height: 540px) {
@@ -200,20 +213,31 @@
     .bezel { padding: 1.5%; }
     .panel { margin-top: 0; padding: 10px; gap: 8px; }
     .row-btns { gap: 6px; }
-    button { font-size: 9px; padding: 8px 2px; min-height: 40px; }
-    .toolbar { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); }
-    .help { display: none; }
+    .panel button { font-size: 9px; padding: 8px 2px; min-height: 40px; }
+    .topbar { position: fixed; top: max(6px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); width: auto; margin: 0; z-index: 50; }
   }
-  @media (max-width: 520px) {
-    body { padding-top: max(56px, env(safe-area-inset-top)); }
-    button { font-size: 9px; padding: 10px 2px; }
+  /* スマホ縦向き：余白を詰め、操作パネルを残りの高さいっぱいに広げる */
+  @media (max-width: 520px) and (orientation: portrait) {
+    body {
+      min-height: 100svh;
+      padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    }
+    .topbar { margin-bottom: 6px; }
+    .machine { flex: 1; display: flex; flex-direction: column; }
+    .bezel { padding: 1.6%; border-radius: 10px; }
+    .panel {
+      flex: 1; max-height: 320px; margin-top: 10px; padding: 10px; gap: 10px;
+      grid-auto-rows: 1fr;
+    }
+    .row-btns { gap: 8px; }
+    .panel button { font-size: 11px; padding: 4px 2px; min-height: 52px; }
     .key { display: none; }
-    .bezel { border-radius: 12px; }
   }
 </style>
 </head>
 <body>
-<div class="toolbar">
+<div class="topbar">
+  <button class="on b-help" id="helpBtn" aria-label="遊び方を見る">HOW TO PLAY</button>
   <button class="on" id="resetBtn" aria-label="クレジットを0にする">RESET</button>
   <button class="on" id="muteBtn" aria-label="サウンド切替">SOUND ON</button>
 </div>
@@ -276,11 +300,32 @@ CARD IS 6 OR LESS
   </div>
 </div>
 
-<div class="help">
-  <b>遊び方：</b> BET で賭け額を選び DEAL（BET 0 のまま DEAL すると前回の賭け額）。残したいカードを HOLD（カードをタップ<span class="kbd"> / 1〜5キー</span>）して DRAW。
-  役ができたら <b>TAKE</b> で獲得、<b>W-UP</b> でダブルアップ。次のカードが 8以上なら BIG、6以下なら SMALL（A は 1 扱い、7 は引き分け）。
-  ダブルアップの配当が COUNTER STOP に達するとパンクして自動精算。
-</div>
+<dialog class="help" id="helpDlg" aria-labelledby="helpTitle">
+  <h2 id="helpTitle">HOW TO PLAY</h2>
+  <div class="body">
+    <h3>基本の流れ</h3>
+    <ol>
+      <li><b>COIN</b> でクレジットを入れる</li>
+      <li><b>BET</b> で賭け額を選ぶ（BET 0 のまま DEAL すると前回の賭け額）</li>
+      <li><b>DEAL</b> で5枚配られる</li>
+      <li>残したいカードをタップするか <b>HOLD</b> を押す<span class="kbd">（キーボードは 1〜5）</span></li>
+      <li><b>DRAW</b> で残さなかったカードを交換</li>
+    </ol>
+    <h3>役ができたら</h3>
+    <ul>
+      <li><b>TAKE</b>：配当を受け取る</li>
+      <li><b>W-UP</b>：ダブルアップに挑戦。次のカードが 8〜K なら <b>BIG</b>、A〜6 なら <b>SMALL</b>。当たれば配当2倍、はずれると0。7 は引き分けでもう一度。</li>
+      <li>配当が COUNTER STOP に達するとパンクして自動精算</li>
+    </ul>
+    <h3>その他</h3>
+    <ul>
+      <li>はずれの演出中に DEAL を押すと、すぐ次のゲームへ</li>
+      <li><b>RESET</b>：クレジットを 0 にする（待機画面のときだけ）</li>
+      <li><b>SOUND</b>：効果音の ON / OFF</li>
+    </ul>
+  </div>
+  <div class="foot"><button class="on" id="helpClose">CLOSE</button></div>
+</dialog>
 
 <script>
 (() => {
@@ -829,6 +874,10 @@ CARD IS 6 OR LESS
   $('bigBtn').onclick = () => guess(true);
   $('smallBtn').onclick = () => guess(false);
   $('dealBtn').onclick = onDeal;
+  const helpDlg = $('helpDlg');
+  $('helpBtn').onclick = () => helpDlg.showModal();
+  $('helpClose').onclick = () => helpDlg.close();
+  helpDlg.addEventListener('click', e => { if (e.target === helpDlg) helpDlg.close(); });   // tap outside to close
   $('resetBtn').onclick = () => {
     if (state !== 'attract') return;
     if (!confirm('クレジットを 0 にします。よろしいですか？')) return;
@@ -841,7 +890,7 @@ CARD IS 6 OR LESS
     $('muteBtn').classList.toggle('on', !muted);
   };
   document.addEventListener('keydown', e => {
-    if (e.repeat) return;
+    if (e.repeat || helpDlg.open) return;
     const k = e.key.toLowerCase();
     if (['1', '2', '3', '4', '5'].includes(k)) toggleHold(+k - 1);
     else if (k === ' ' || k === 'enter') { e.preventDefault(); onDeal(); }
