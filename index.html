@@ -152,8 +152,14 @@
   }
   .row-btns { display: grid; gap: 10px; }
   .holds { grid-template-columns: repeat(5, 1fr); }
+  /* rows: HOLD x5 / bet row (kept small) / double-up row / DEAL full width */
   .funcs { grid-template-columns: repeat(4, 1fr); }
-  .funcs2 { grid-template-columns: repeat(3, 1fr); }
+  .funcs2 { grid-template-columns: repeat(4, 1fr); }
+  .dealrow { grid-template-columns: 1fr; }
+  .panel button { white-space: nowrap; }
+  .funcs button { font-size: 9px; padding: 8px 4px; }
+  .funcs2 button { padding: 16px 4px; }
+  .dealrow button { font-size: 13px; padding: 16px 4px; }
   button {
     font-family: inherit; font-size: 11px; line-height: 1.4;
     padding: 12px 4px; border: 0; border-radius: 8px; color: #111; cursor: pointer;
@@ -202,6 +208,7 @@
   @media (hover: none) and (pointer: coarse) {
     .key, .kbd { display: none; }
     .panel button { min-height: 48px; }
+    .panel .funcs button { min-height: 34px; }
   }
   /* スマホ横向き：画面とボタンを左右に並べる */
   @media (orientation: landscape) and (max-height: 540px) {
@@ -214,6 +221,7 @@
     .panel { margin-top: 0; padding: 10px; gap: 8px; }
     .row-btns { gap: 6px; }
     .panel button { font-size: 9px; padding: 8px 2px; min-height: 40px; }
+    .panel .funcs button { min-height: 30px; padding: 4px 2px; }
     .topbar { position: fixed; top: max(6px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); width: auto; margin: 0; z-index: 50; }
   }
   /* スマホ縦向き：余白を詰め、操作パネルを残りの高さいっぱいに広げる */
@@ -226,11 +234,13 @@
     .machine { flex: 1; display: flex; flex-direction: column; }
     .bezel { padding: 1.6%; border-radius: 10px; }
     .panel {
-      flex: 1; max-height: 320px; margin-top: 10px; padding: 10px; gap: 10px;
-      grid-auto-rows: 1fr;
+      flex: 1; max-height: 380px; margin-top: 10px; padding: 10px; gap: 10px;
+      grid-template-rows: 1fr .65fr 1.3fr 1.15fr;
     }
     .row-btns { gap: 8px; }
     .panel button { font-size: 11px; padding: 4px 2px; min-height: 52px; }
+    .panel .funcs button { font-size: 9px; min-height: 34px; }
+    .panel .dealrow button { font-size: 13px; }
     .key { display: none; }
   }
 </style>
@@ -288,13 +298,17 @@ CARD IS 6 OR LESS
     <div class="row-btns holds" id="holdBtns"></div>
     <div class="row-btns funcs">
       <button class="b-coin" id="coinBtn">COIN<span class="key">C</span></button>
-      <button class="b-bet"  id="betBtn">BET<span class="key">B</span></button>
-      <button class="b-take" id="takeBtn">TAKE<span class="key">T</span></button>
-      <button class="b-dbl"  id="dblBtn">W-UP<span class="key">W</span></button>
+      <button class="b-bet"  id="betDownBtn" aria-label="BETを下げる">BET-<span class="key">V</span></button>
+      <button class="b-bet"  id="betBtn" aria-label="BETを上げる">BET+<span class="key">B</span></button>
+      <button class="b-bet"  id="maxBtn" aria-label="MAX BET">MAX<span class="key">M</span></button>
     </div>
     <div class="row-btns funcs2">
+      <button class="b-take" id="takeBtn">TAKE<span class="key">T</span></button>
+      <button class="b-dbl"  id="dblBtn">W-UP<span class="key">W</span></button>
       <button class="b-small" id="smallBtn">SMALL<span class="key">S / ↓</span></button>
       <button class="b-big"   id="bigBtn">BIG<span class="key">G / ↑</span></button>
+    </div>
+    <div class="row-btns dealrow">
       <button class="b-deal"  id="dealBtn">DEAL<span class="key">SPACE / ENTER</span></button>
     </div>
   </div>
@@ -306,7 +320,7 @@ CARD IS 6 OR LESS
     <h3>基本の流れ</h3>
     <ol>
       <li><b>COIN</b> でクレジットを入れる。クレジットが最低 BET 未満になったら（RESET 後も）、1回 1000 で合計 10000 まで入れられる。DEAL を押すと締め切り</li>
-      <li><b>BET</b> で賭け額を選ぶ（BET 0 のまま DEAL すると前回の賭け額）</li>
+      <li><b>BET+</b> / <b>BET-</b> で賭け額を上げ下げ（100 までは 10 ずつ、その先は 20 ずつ）。<b>MAX</b> でクレジット内の最大 BET（上限 1000）。BET 0 のまま DEAL すると前回の賭け額</li>
       <li><b>DEAL</b> で5枚配られる</li>
       <li>残したいカードをタップするか <b>HOLD</b> を押す<span class="kbd">（キーボードは 1〜5）</span></li>
       <li><b>DRAW</b> で残さなかったカードを交換</li>
@@ -342,7 +356,8 @@ CARD IS 6 OR LESS
   ];
   const DEFAULTS = {
     startCredit: 0, coinValue: 1000, coinLimit: 10000,
-    betMin: 20, betMax: 1000, betStep: 20,
+    // BET goes up by betStep until betBreak, then by betStepHigh (10,20..100,120,140..1000)
+    betMin: 10, betMax: 1000, betStep: 10, betBreak: 100, betStepHigh: 20,
     pays: { RF: 500, SF: 200, '4K': 100, FH: 10, FL: 7, ST: 5, '3K': 3, '2P': 2 },
     csMode: 'auto', csMult: 200, csAmount: 20000,
   };
@@ -578,6 +593,61 @@ CARD IS 6 OR LESS
     10: [[L, 40], [R, 40], [C, 50], [L, 60], [R, 60], [L, 80], [R, 80], [C, 90], [L, 100], [R, 100]],
   };
   const pipScale = n => n <= 6 ? 1.9 : n <= 8 ? 1.6 : 1.45;
+  // ---- court cards as original pixel art ----
+  // Top half of the figure on a 16 x 17 grid (the bottom half is the same art rotated 180°).
+  // .=frame background  k=outline  y=gold  s=skin  w=white  h=hair
+  // R=main robe colour, A=accent (swapped by suit so red and black suits look different)
+  const COURT_ART = {
+    13: [ // KING: crown with jewels, white beard, patterned robe
+      '....y..yy..y....',
+      '....yy.yy.yy....',
+      '....yyyyyyyy....',
+      '....yRyyyyRy....',
+      '...kkkkkkkkkk...',
+      '...kssssssssk...',
+      '...kskksskksk...',
+      '...kssssssssk...',
+      '...kwsskksswk...',
+      '...kwwwwwwwwk...',
+      '....kwwwwwwk....',
+      '..kkRRkwwkRRkk..',
+      '.kRRRRyyyyRRRRk.',
+      '.kRAARyRRyRAARk.',
+      'kRAyARyRRyRAyARk',
+      'kRRARRyRRyRRARRk',
+      'kyyyyyyyyyyyyyyk',
+    ],
+  };
+  function courtColors(s) {
+    const red = isRed(s);
+    return { k: '#151515', y: '#f2c230', s: '#ffd9a8', w: '#ffffff', h: '#6b3a1a',
+             R: red ? '#d8262a' : '#2848d0', A: red ? '#2848d0' : '#d8262a' };
+  }
+  // grid -> one crisp path per colour, placed at (x0, y0) with dot size dw x dh
+  function pixelArt(rows, colors, x0, y0, dw, dh) {
+    const paths = {};
+    rows.forEach((row, y) => {
+      for (let x = 0; x < row.length;) {
+        const ch = row[x];
+        if (!colors[ch]) { x++; continue; }
+        let e = x;
+        while (e < row.length && row[e] === ch) e++;
+        paths[ch] = (paths[ch] || '') + `M${x0 + x * dw} ${y0 + y * dh}h${(e - x) * dw}v${dh}h${-(e - x) * dw}z`;
+        x = e;
+      }
+    });
+    return Object.entries(paths).map(([ch, d]) => `<path d="${d}" fill="${colors[ch]}" shape-rendering="crispEdges"/>`).join('');
+  }
+  // frame 30..86 x 12..128; each half is 17 rows tall
+  function courtSVG(r, s) {
+    const FX = 30, FY = 12, FW = 56, FH = 116, half = FH / 2;
+    const art = pixelArt(COURT_ART[r], courtColors(s), FX, FY, FW / 16, half / 17);
+    const cx = FX + FW / 2, cy = FY + half;
+    return `<rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" fill="#fff"/>
+      <g>${art}</g><g transform="rotate(180 ${cx} ${cy})">${art}</g>
+      <rect x="${FX}" y="${FY}" width="${FW}" height="${FH}" fill="none" stroke="#151515" stroke-width="1.6"/>`;
+  }
+
   function faceFigure(r, s) {
     const skin = '#ffd9a8', robe = isRed(s) ? '#d8262a' : '#2848d0', trim = '#ffd640';
     let hat;
@@ -609,6 +679,8 @@ CARD IS 6 OR LESS
       body = PIPS[c.r].map(([x, y]) => pip(c.s, x, y, pipScale(c.r), y > 70)).join('');
     } else if (c.r === 14) {
       body = pip(c.s, C, 72, 4.4);
+    } else if (COURT_ART[c.r]) {
+      body = courtSVG(c.r, c.s);
     } else {
       // the figure is drawn for a 22..78 x 20..120 frame; fit it into the narrower 30..86 x 12..128 frame
       // so the left strip stays free for the big rank and suit
@@ -689,11 +761,14 @@ CARD IS 6 OR LESS
     on('coinBtn', canCoin());
     on('resetBtn', state === 'attract');
     on('betBtn', state === 'attract');
+    on('betDownBtn', state === 'attract');
+    on('maxBtn', state === 'attract');
     on('takeBtn', state === 'dblask');
     on('dblBtn', canDbl);
     on('bigBtn', state === 'dbl');
     on('smallBtn', state === 'dbl');
-    on('dealBtn', state === 'attract' || state === 'hold' || state === 'dblask' || state === 'lose');
+    // DEAL is off while a win is pending, so a win can only be collected with TAKE (prevents mis-presses)
+    on('dealBtn', state === 'attract' || state === 'hold' || state === 'lose');
     $('dealBtn').firstChild.textContent = state === 'hold' ? 'DRAW' : 'DEAL';
   }
   function showLayer(name) {
@@ -738,15 +813,45 @@ CARD IS 6 OR LESS
     if (state === 'attract') updateAttractText();
     renderStatus();
   }
-  function pressBet() {
-    if (state !== 'attract') return;
-    const { betMin, betMax, betStep } = settings;
-    bet = bet === 0 ? betMin : bet + betStep;
-    if (bet > betMax) bet = bet - betStep < betMax ? betMax : betMin;
-    lastBet = bet;
+  // every selectable bet in order: betMin..betBreak by betStep, then by betStepHigh up to betMax
+  function betLadder() {
+    const { betMin, betMax, betStep, betBreak, betStepHigh } = settings;
+    const list = [];
+    for (let b = betMin; b < betMax;) {
+      list.push(b);
+      const next = b + (b < betBreak ? betStep : betStepHigh);
+      b = b < betBreak && next > betBreak ? betBreak : next;
+    }
+    list.push(betMax);
+    return list;
+  }
+  // index of the current bet on the ladder (BET 0 starts from the last bet played)
+  function ladderIndex(list) {
+    const cur = bet || lastBet;
+    const i = list.findIndex(b => b >= cur);
+    return i < 0 ? list.length - 1 : i;
+  }
+  function setBet(b) {
+    bet = lastBet = b;
     // winning-row leftovers from the previous game are cleared once a new bet starts
     winKey = null; rowValue = null; rowBlink = false;
     sfx.bet(); renderStatus();
+  }
+  function pressBet() {
+    if (state !== 'attract') return;
+    const list = betLadder();
+    setBet(bet === 0 ? list[0] : list[Math.min(list.length - 1, ladderIndex(list) + 1)]);   // stops at the max
+  }
+  function betDown() {
+    if (state !== 'attract') return;
+    const list = betLadder();
+    setBet(list[Math.max(0, ladderIndex(list) - (bet === 0 ? 0 : 1))]);   // from BET 0: shows the last bet
+  }
+  function maxBet() {
+    if (state !== 'attract') return;
+    const list = betLadder();
+    const affordable = list.filter(b => b <= credit);
+    setBet(affordable.length ? affordable[affordable.length - 1] : list[list.length - 1]);
   }
   function toggleHold(i) {
     if (state !== 'hold') return;
@@ -910,7 +1015,6 @@ CARD IS 6 OR LESS
   function onDeal() {
     if (state === 'attract') deal();
     else if (state === 'hold') draw();
-    else if (state === 'dblask') take();
     else if (state === 'lose' && skipLose) skipLose();
   }
 
@@ -947,6 +1051,8 @@ CARD IS 6 OR LESS
   // ---------- wiring ----------
   $('coinBtn').onclick = addCoin;
   $('betBtn').onclick = pressBet;
+  $('betDownBtn').onclick = betDown;
+  $('maxBtn').onclick = maxBet;
   $('takeBtn').onclick = take;
   $('dblBtn').onclick = startDouble;
   $('bigBtn').onclick = () => guess(true);
@@ -973,6 +1079,8 @@ CARD IS 6 OR LESS
     if (['1', '2', '3', '4', '5'].includes(k)) toggleHold(+k - 1);
     else if (k === ' ' || k === 'enter') { e.preventDefault(); onDeal(); }
     else if (k === 'b') pressBet();
+    else if (k === 'v') betDown();
+    else if (k === 'm') maxBet();
     else if (k === 'c') addCoin();
     else if (k === 't') take();
     else if (k === 'w') startDouble();
@@ -1000,6 +1108,14 @@ CARD IS 6 OR LESS
     badge.textContent = 'DEBUG';
     badge.style.cssText = 'position:absolute;left:2cqw;bottom:1.5cqw;font-size:2cqw;color:#ff5050;z-index:6';
     screenEl.appendChild(badge);
+  }
+  if (DEBUG === 'cards') {
+    // every card on one sheet, for checking the artwork
+    const sheet = document.createElement('div');
+    sheet.style.cssText = 'position:fixed;inset:0;z-index:99;overflow:auto;background:#1f2fd0;display:grid;grid-template-columns:repeat(13,minmax(56px,1fr));gap:6px;padding:8px';
+    for (const s of SUITS) for (let r = 2; r <= 14; r++) sheet.insertAdjacentHTML('beforeend', `<div>${cardSVG({ r, s })}</div>`);
+    sheet.onclick = () => sheet.remove();
+    document.body.appendChild(sheet);
   }
   if (DEBUG === 'cstop') {
     // sample: 3 OF A KIND at BET 100 doubled up to 38400
