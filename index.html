@@ -358,7 +358,7 @@ CARD IS 6 OR LESS
     </div>
     <div class="row-btns funcs2">
       <button class="b-take" id="takeBtn">TAKE<span class="key">T</span></button>
-      <button class="b-dbl"  id="dblBtn">W-UP<span class="key">W</span></button>
+      <button class="b-dbl"  id="dblBtn">W-UP<span class="key">W / SHIFT</span></button>
       <button class="b-small" id="smallBtn">SMALL<span class="key">S / ↓</span></button>
       <button class="b-big"   id="bigBtn">BIG<span class="key">G / ↑</span></button>
     </div>
@@ -1358,7 +1358,7 @@ CARD IS 6 OR LESS
     else if (k === 'm') maxBet();
     else if (k === 'c') addCoin();
     else if (k === 't') take();
-    else if (k === 'w') startDouble();
+    else if (k === 'w' || k === 'shift') startDouble();
     else if (k === 'g' || k === 'arrowup') { e.preventDefault(); guess(true); }
     else if (k === 's' || k === 'arrowdown') { e.preventDefault(); guess(false); }
   });
