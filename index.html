@@ -205,6 +205,18 @@
   .data .head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 4px; }
   .data h2 { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--yellow); margin: 0; text-shadow: 0 0 6px currentColor; }
   .data .since { font-size: 11px; color: #c8d0ff; padding: 0 14px; }
+  .data .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 14px; }
+  .data .tabs button {
+    font: 600 13px system-ui, sans-serif; padding: 9px 4px; border-radius: 6px; filter: none; cursor: pointer;
+    background: rgba(0,0,30,.4); color: #c8d0ff; border: 1px solid rgba(255,255,255,.25); box-shadow: none;
+  }
+  .data .tabs button[aria-selected=true] { background: var(--yellow); color: #111; border-color: var(--yellow); }
+  .data .big-balance { text-align: center; padding: 10px 0 6px; }
+  .data .big-balance .k { font-size: 12px; color: #c8d0ff; }
+  .data .big-balance .v { font-family: 'Press Start 2P', monospace; font-size: 26px; margin-top: 8px; text-shadow: 0 0 8px currentColor; }
+  .data .eq { font-size: 12px; color: #c8d0ff; background: rgba(0,0,30,.35); border-radius: 6px; padding: 8px 10px; margin-top: 8px; line-height: 1.8; }
+  .data .eq b { color: var(--white); font-family: 'Press Start 2P', monospace; font-size: 10px; }
+  .data .live { color: var(--yellow); font-size: 11px; }
   .data section { padding: 8px 14px 4px; }
   .data h3 { font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--cyan); margin: 6px 0 8px; text-shadow: 0 0 5px currentColor; }
   .data .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
@@ -358,6 +370,11 @@ CARD IS 6 OR LESS
 
 <dialog class="data" id="dataDlg" aria-labelledby="dataTitle">
   <div class="head"><h2 id="dataTitle">PLAY DATA</h2></div>
+  <div class="tabs" role="tablist" aria-label="記録の種類">
+    <button role="tab" data-tab="wallet" aria-selected="true">収支</button>
+    <button role="tab" data-tab="history" aria-selected="false">履歴</button>
+    <button role="tab" data-tab="detail" aria-selected="false">プレイ詳細</button>
+  </div>
   <div class="since" id="dataSince"></div>
   <div id="dataBody"></div>
   <div class="foot">
@@ -882,8 +899,17 @@ CARD IS 6 OR LESS
   function addCoin() {
     if (!canCoin()) return;
     const add = Math.min(settings.coinValue, settings.coinLimit - credit);
+    const prev = credit, fresh = !coinOpen;   // first coin of a window starts a new session
     credit += add; saveCredit(); setCoinOpen(true); sfx.coin();
-    meter(m => { m.coin += add; m.coinCount++; });
+    meter(m => {
+      m.coin += add; m.coinCount++;
+      const s = openSession(m);
+      if (fresh || !s) {
+        if (s) { s.end = Date.now(); s.endCredit = prev; }
+        m.sessions.push({ start: Date.now(), startCredit: prev, coin: add, games: 0 });
+        while (m.sessions.length > 30) m.sessions.shift();
+      } else s.coin += add;
+    });
     if (state === 'attract') updateAttractText();
     renderStatus();
   }
@@ -938,7 +964,10 @@ CARD IS 6 OR LESS
     state = 'busy';
     bet = lastBet = b;
     credit -= b; saveCredit(); setCoinOpen(false);
-    meter(m => { m.in += b; m.games++; const d = today(m); d.in += b; d.games++; });
+    meter(m => {
+      m.in += b; m.games++; const d = today(m); d.in += b; d.games++;
+      const s = openSession(m); if (s) s.games++;
+    });
     win = 0; winKey = null; rowValue = null; rowBlink = false; dblRound = false; dblStreak = 0;
     held = [false, false, false, false, false];
     deck = newDeck();
@@ -1099,20 +1128,32 @@ CARD IS 6 OR LESS
     for (const h of HANDS) hands[h.key] = 0;
     return { since: Date.now(), in: 0, out: 0, coin: 0, coinCount: 0, games: 0, hands,
              best: 0, days: {},
+             // wallet view: base = credit already held when recording began, resetLoss = credit given up with RESET
+             base: null, resetLoss: 0, sessions: [],
              dbl: { rounds: 0, tries: 0, win: 0, lose: 0, draw: 0, cstop: 0, maxStreak: 0 } };
   }
   function readMeters() {
     const m = Object.assign(newMeters(), store.get('retroPokerMeters') || {});
     m.dbl = Object.assign(newMeters().dbl, m.dbl);   // older saves lack newer fields
     m.days = m.days || {};
+    m.sessions = m.sessions || [];
+    m.resetLoss = m.resetLoss || 0;
     return m;
   }
+  // credit = base + coin - in + out - resetLoss always holds, so a missing base can be recovered from it
+  const baseOf = m => m.base != null ? m.base : credit - m.coin + m.in - m.out + m.resetLoss;
   function meter(fn) {
     if (DEBUG) return;   // test plays must not pollute the IN/OUT records
     // re-read every time so a reset from the admin page is respected
     const m = readMeters();
     fn(m);
+    if (m.base == null) m.base = baseOf(m);   // first record (or an older save): fix the starting credit
     store.set('retroPokerMeters', m);
+  }
+  // one "session" = from the first COIN of a coin window until the next window opens or RESET
+  function openSession(m) {
+    const s = m.sessions[m.sessions.length - 1];
+    return s && s.end == null ? s : null;
   }
   // per-day totals (local date), keeping the latest 60 days
   const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1158,14 +1199,65 @@ CARD IS 6 OR LESS
   const num = n => Number(n || 0).toLocaleString('ja-JP');
   const rate = (a, b, d = 1) => b ? (100 * a / b).toFixed(d) + '%' : '—';
   const tile = (k, v, cls = '') => `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  let dataTab = 'wallet';
+  const signed = n => (n >= 0 ? '+' : '') + num(n);
+  const signColor = n => n > 0 ? 'var(--green)' : n < 0 ? 'var(--red)' : 'var(--white)';
+  const when = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   function renderData() {
-    const m = readMeters(), d = m.dbl, g = m.games || 0;
-    const diff = (m.out || 0) - (m.in || 0);
-    $('dataSince').textContent = g ? `集計開始：${new Date(m.since).toLocaleString('ja-JP')}（この端末の記録）` : '';
-    if (!g) {
+    const m = readMeters();
+    document.querySelectorAll('.data [data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === dataTab)));
+    const hasAny = m.games || m.coinCount || m.resetLoss;
+    $('dataSince').textContent = hasAny ? `集計開始：${new Date(m.since).toLocaleString('ja-JP')}（この端末の記録）` : '';
+    if (!hasAny) {
       $('dataBody').innerHTML = '<section><p class="empty">まだ記録がありません。遊ぶとここに記録されます。</p></section>';
       return;
     }
+    $('dataBody').innerHTML = dataTab === 'wallet' ? walletHTML(m) : dataTab === 'history' ? historyHTML(m) : detailHTML(m);
+  }
+
+  // 収支: what the player put in versus what they hold now
+  function walletHTML(m) {
+    const base = baseOf(m);
+    const balance = credit + m.resetLoss - m.coin - base;
+    const pending = state === 'dblask' || state === 'dbl' || state === 'busy-cs';
+    return `<section>
+      <div class="big-balance"><div class="k">収支</div><div class="v" style="color:${signColor(balance)}">${signed(balance)}</div></div>
+      <div class="tiles">
+        ${tile('投入額（COIN）', `${num(m.coin)} <small>(${num(m.coinCount)}回)</small>`)}
+        ${tile('今のクレジット', num(credit), 'y')}
+        ${tile('RESET で手放した分', num(m.resetLoss))}
+        ${base ? tile('記録開始時のクレジット', num(base)) : ''}
+      </div>
+      <div class="eq">収支 ＝ 今のクレジット ＋ RESET で手放した分 − 投入額${base ? ' − 記録開始時のクレジット' : ''}<br>
+        <b>${signed(balance)}</b> ＝ ${num(credit)} ＋ ${num(m.resetLoss)} − ${num(m.coin)}${base ? ` − ${num(base)}` : ''}</div>
+      ${pending ? '<p class="legend live">※ 今出ている役の配当（まだ TAKE していない分）は含みません。</p>' : ''}
+      <p class="legend">プラスなら入れた額より増えている、マイナスなら減っている状態です。</p>
+    </section>`;
+  }
+
+  // 履歴: one row per session (from the first COIN until the next coin window or RESET), newest first
+  function historyHTML(m) {
+    if (!m.sessions.length) return '<section><p class="empty">まだ履歴がありません。COIN を入れて遊ぶと、1回の遊びごとに記録されます。</p></section>';
+    const rows = m.sessions.slice().reverse().map(s => {
+      const live = s.end == null;
+      const endCredit = live ? credit : s.endCredit;
+      const bal = endCredit - s.startCredit - s.coin;
+      const endLabel = live ? '<span class="live">プレイ中</span>' : s.reset ? 'RESET' : '';
+      return `<tr><td>${when(s.start)}</td><td>${num(s.coin)}</td><td>${num(endCredit)}${endLabel ? `<br><small>${endLabel}</small>` : ''}</td>
+        <td>${num(s.games)}</td><td style="color:${signColor(bal)}">${signed(bal)}</td></tr>`;
+    }).join('');
+    return `<section><table>
+        <tr><th>開始</th><th>投入</th><th>終了時</th><th>回数</th><th>収支</th></tr>${rows}
+      </table>
+      <p class="legend">1回の遊び＝クレジットが残り少なく（または RESET 後に）COIN を入れてから、次に COIN の受付が始まるまで。収支＝終了時のクレジット − 開始時のクレジット − 投入。直近30回分。</p>
+    </section>`;
+  }
+
+  // プレイ詳細: per-game bets/payouts, double-up, hands, daily
+  function detailHTML(m) {
+    const d = m.dbl, g = m.games || 0;
+    if (!g) return '<section><p class="empty">まだゲームの記録がありません。</p></section>';
+    const diff = (m.out || 0) - (m.in || 0);
     // hands: measured rate as a bar, theoretical rate as a white tick
     const rows = [...HANDS, { key: 'none', label: 'NO HAND', color: '#c8d0ff' }];
     const maxRate = Math.max(...rows.map(h => Math.max(THEORY[h.key], 100 * (m.hands[h.key] || 0) / g)));
@@ -1189,17 +1281,16 @@ CARD IS 6 OR LESS
     const bouts = d.tries || 0;
     const decided = (d.win || 0) + (d.lose || 0);
     const share = n => `${num(n)}回 <small>(${rate(n || 0, bouts)})</small>`;
-    $('dataBody').innerHTML = `
-      <section><h3>IN / OUT</h3><div class="tiles">
-        ${tile('IN（賭けた合計）', num(m.in))}
-        ${tile('OUT（払い出し合計）', num(m.out))}
-        ${tile('出率 OUT÷IN', rate(m.out, m.in), 'y')}
-        ${tile('収支 OUT−IN', (diff >= 0 ? '+' : '') + num(diff), diff >= 0 ? 'g' : 'r')}
+    return `
+      <section><h3>BET / PAYOUT</h3><div class="tiles">
+        ${tile('BET 合計', num(m.in))}
+        ${tile('払い出し合計', num(m.out))}
+        ${tile('出率（払い出し÷BET）', rate(m.out, m.in), 'y')}
+        ${tile('差引（払い出し−BET）', signed(diff), diff >= 0 ? 'g' : 'r')}
         ${tile('ゲーム数', num(g))}
         ${tile('役ができた率', rate(g - (m.hands.none || 0), g))}
         ${tile('最高獲得額', num(m.best))}
-        ${tile('COIN', `${num(m.coinCount)}回 / ${num(m.coin)}`)}
-      </div></section>
+      </div><p class="legend">ゲームごとの賭け金と払い出しの合計です。COIN の投入額は「収支」タブで確認できます。</p></section>
       <section><h3>DOUBLE UP</h3><div class="tiles">
         ${tile('成功率（7を除く）', rate(d.win, decided), 'y')}
         ${tile('勝負数（BIG/SMALL）', `${num(bouts)}回`)}
@@ -1214,14 +1305,15 @@ CARD IS 6 OR LESS
         <tr><th>役</th><th>回数</th><th>実測</th><th>理論</th><th></th></tr>${handRows}
       </table><p class="legend">色の棒＝実測、白い線＝理論値。ゲーム数が少ないうちは大きくぶれます。</p></section>
       <section><h3>DAILY</h3><table>
-        <tr><th>日付</th><th>回数</th><th>IN</th><th>OUT</th><th>収支</th><th></th></tr>${dayRows}
-      </table><p class="legend">直近14日。棒の上段（橙）＝IN、下段（緑）＝OUT</p></section>`;
+        <tr><th>日付</th><th>回数</th><th>BET</th><th>払出</th><th>差引</th><th></th></tr>${dayRows}
+      </table><p class="legend">直近14日。棒の上段（橙）＝BET、下段（緑）＝払い出し</p></section>`;
   }
-  $('dataBtn').onclick = () => { renderData(); dataDlg.showModal(); };
+  document.querySelectorAll('.data [data-tab]').forEach(b => b.onclick = () => { dataTab = b.dataset.tab; renderData(); });
+  $('dataBtn').onclick = () => { dataTab = 'wallet'; renderData(); dataDlg.showModal(); };
   $('dataClose').onclick = () => dataDlg.close();
   dataDlg.addEventListener('click', e => { if (e.target === dataDlg) dataDlg.close(); });
   $('dataReset').onclick = () => {
-    if (!confirm('プレイ記録（IN/OUT・役の回数・ダブルアップなど）をすべて消します。クレジットはそのままです。よろしいですか？')) return;
+    if (!confirm('プレイ記録（収支・履歴・BET/払い出し・役の回数・ダブルアップなど）をすべて消します。クレジットはそのままです。よろしいですか？')) return;
     store.set('retroPokerMeters', null);
     renderData();
   };
@@ -1233,7 +1325,14 @@ CARD IS 6 OR LESS
   $('resetBtn').onclick = () => {
     if (state !== 'attract') return;
     if (!confirm('クレジットを 0 にします。よろしいですか？')) return;
-    credit = 0; saveCredit(); sfx.draw();
+    const old = credit;
+    credit = 0; saveCredit(); setCoinOpen(false); sfx.draw();
+    // the given-up credit is kept in the record so the wallet balance stays right; RESET also ends the session
+    meter(m => {
+      m.resetLoss += old;
+      const s = openSession(m);
+      if (s) { s.end = Date.now(); s.endCredit = old; s.reset = true; }
+    });
     toAttract();
   };
   // 2-colour (red/black) <-> 4-colour deck; the label shows the scheme in use
