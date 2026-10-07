@@ -183,14 +183,16 @@
   .b-deal { --c: #ffffff; }
   .key { display: block; font-size: 8px; opacity: .6; margin-top: 3px; }
   /* ---- slim top bar (HELP / RESET / SOUND) ---- */
-  .topbar { width: 100%; max-width: 960px; display: flex; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
+  .topbar { width: 100%; max-width: 960px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
   .topbar button, .topbar button.on {
-    font-size: 9px; padding: 6px 10px; min-height: 0; border-radius: 6px; --c: #a4a4ac;
-    box-shadow: 0 2px 0 rgba(0,0,0,.55);
+    font-size: 9px; padding: 6px 9px; min-height: 0; border-radius: 6px; --c: #a4a4ac;
+    box-shadow: 0 2px 0 rgba(0,0,0,.55); white-space: nowrap;
   }
+  @media (max-width: 400px) { .topbar button, .topbar button.on { font-size: 8px; padding: 6px 7px; } }
   .topbar .b-help { --c: #ffd640; }
 
   .topbar .b-data { --c: #5cff6a; }
+  .topbar .b-color { --c: #7fd0ff; }
 
   /* ---- player record dialog (retro blue screen) ---- */
   dialog.data {
@@ -209,6 +211,7 @@
   .data .tile { background: rgba(0,0,30,.35); border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 6px 8px; }
   .data .tile .k { font-size: 11px; color: #c8d0ff; }
   .data .tile .v { font-family: 'Press Start 2P', monospace; font-size: 13px; margin-top: 4px; color: var(--white); word-break: break-all; }
+  .data .tile .v small { font-size: 10px; color: #c8d0ff; }
   .data .tile.g .v { color: var(--green); } .data .tile.r .v { color: var(--red); } .data .tile.y .v { color: var(--yellow); }
   .data table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   .data td, .data th { padding: 4px 4px; text-align: right; white-space: nowrap; border-bottom: 1px solid rgba(255,255,255,.12); }
@@ -284,9 +287,10 @@
 </head>
 <body>
 <div class="topbar">
-  <button class="on b-help" id="helpBtn" aria-label="遊び方を見る">HOW TO PLAY</button>
+  <button class="on b-help" id="helpBtn" aria-label="遊び方を見る">HELP</button>
   <button class="on b-data" id="dataBtn" aria-label="プレイ記録を見る">DATA</button>
   <button class="on" id="resetBtn" aria-label="クレジットを0にする">RESET</button>
+  <button class="on b-color" id="colorBtn" aria-label="トランプの色を2色と4色で切り替え">2COLOR</button>
   <button class="on" id="muteBtn" aria-label="サウンド切替">SOUND ON</button>
 </div>
 
@@ -623,7 +627,20 @@ CARD IS 6 OR LESS
   }
   const SUIT_PATH = Object.fromEntries(Object.entries(SUIT_BITMAP).map(([s, rows]) => [s, bitmapPath(rows)]));
   const isRed = s => s === 'H' || s === 'D';
-  const suitColor = s => isRed(s) ? '#e02424' : '#151515';
+  // card colour scheme: classic red/black, or a 4-colour deck that is easier to read on small screens
+  let fourColor = store.get('retroPokerFourColor') === true;
+  const PIP_COLORS = {
+    2: { S: '#151515', H: '#e02424', D: '#e02424', C: '#151515' },
+    4: { S: '#151515', H: '#e02424', D: '#1f4fd6', C: '#13913b' },
+  };
+  // court-card robe (main) and accent colours follow the scheme
+  const ROBE = {
+    2: { S: ['#2848d0', '#d8262a'], H: ['#d8262a', '#2848d0'], D: ['#d8262a', '#2848d0'], C: ['#2848d0', '#d8262a'] },
+    4: { S: ['#2848d0', '#d8262a'], H: ['#d8262a', '#2848d0'], D: ['#2848d0', '#d8262a'], C: ['#1d8f3a', '#d8262a'] },
+  };
+  const scheme = () => (fourColor ? 4 : 2);
+  const suitColor = s => PIP_COLORS[scheme()][s];
+  const robeColors = s => ROBE[scheme()][s];
   function pip(s, x, y, scale = 1.35, flip = false) {
     return `<g transform="translate(${x} ${y}) scale(${scale})${flip ? ' rotate(180)' : ''}" fill="${suitColor(s)}">${SUIT_PATH[s]}</g>`;
   }
@@ -668,9 +685,8 @@ CARD IS 6 OR LESS
     ],
   };
   function courtColors(s) {
-    const red = isRed(s);
-    return { k: '#151515', y: '#f2c230', s: '#ffd9a8', w: '#ffffff', h: '#6b3a1a',
-             R: red ? '#d8262a' : '#2848d0', A: red ? '#2848d0' : '#d8262a' };
+    const [R, A] = robeColors(s);
+    return { k: '#151515', y: '#f2c230', s: '#ffd9a8', w: '#ffffff', h: '#6b3a1a', R, A };
   }
   // grid -> one crisp path per colour, placed at (x0, y0) with dot size dw x dh
   function pixelArt(rows, colors, x0, y0, dw, dh) {
@@ -698,7 +714,7 @@ CARD IS 6 OR LESS
   }
 
   function faceFigure(r, s) {
-    const skin = '#ffd9a8', robe = isRed(s) ? '#d8262a' : '#2848d0', trim = '#ffd640';
+    const skin = '#ffd9a8', robe = robeColors(s)[0], trim = '#ffd640';
     let hat;
     if (r === 13) hat = `<polygon points="39,34 40,23 45,29 50,21 55,29 60,23 61,34" fill="${trim}" stroke="#111" stroke-width="1"/>`;
     else if (r === 12) hat = `<rect x="38" y="30" width="24" height="26" fill="#6b3a1a"/><polygon points="42,32 46,25 50,30 54,25 58,32" fill="${trim}" stroke="#111" stroke-width="1"/>`;
@@ -779,15 +795,24 @@ CARD IS 6 OR LESS
   }
 
   // ---------- rendering ----------
+  // remember what each card spot shows so a colour-scheme switch can repaint it in place
+  const shownSlots = [null, null, null, null, null];
+  let shownD = null;
   function renderSlot(i, card, animate) {
+    shownSlots[i] = card;
     const el = slots[i].querySelector('.card');
     el.innerHTML = cardSVG(card);
     if (animate) { el.classList.remove('flip'); void el.offsetWidth; el.classList.add('flip'); }
   }
   function setDCard(card, animate) {
+    shownD = card;
     const el = $('dcard');
     el.innerHTML = cardSVG(card);
     if (animate) { el.classList.remove('flip'); void el.offsetWidth; el.classList.add('flip'); }
+  }
+  function repaintCards() {
+    shownSlots.forEach((c, i) => renderSlot(i, c));
+    setDCard(shownD);
   }
   function renderPays() {
     $('pays').innerHTML = HANDS.map(h => {
@@ -1160,7 +1185,10 @@ CARD IS 6 OR LESS
         <td style="color:${df >= 0 ? 'var(--green)' : 'var(--red)'}">${df >= 0 ? '+' : ''}${num(df)}</td>
         <td class="barcell"><div class="bar"><i style="width:${100 * x.in / dayMax}%;background:var(--orange);height:50%"></i><i style="width:${100 * x.out / dayMax}%;background:var(--green);top:50%"></i></div></td></tr>`;
     }).join('');
+    // every BIG/SMALL press is one "bout"; win + lose + draw = bouts, so the three shares add up to 100%
+    const bouts = d.tries || 0;
     const decided = (d.win || 0) + (d.lose || 0);
+    const share = n => `${num(n)}回 <small>(${rate(n || 0, bouts)})</small>`;
     $('dataBody').innerHTML = `
       <section><h3>IN / OUT</h3><div class="tiles">
         ${tile('IN（賭けた合計）', num(m.in))}
@@ -1173,13 +1201,15 @@ CARD IS 6 OR LESS
         ${tile('COIN', `${num(m.coinCount)}回 / ${num(m.coin)}`)}
       </div></section>
       <section><h3>DOUBLE UP</h3><div class="tiles">
-        ${tile('挑戦した回数', num(d.rounds))}
         ${tile('成功率（7を除く）', rate(d.win, decided), 'y')}
-        ${tile('成功 / 失敗', `${num(d.win)} / ${num(d.lose)}`)}
-        ${tile('7 引き分け', num(d.draw))}
+        ${tile('勝負数（BIG/SMALL）', `${num(bouts)}回`)}
+        ${tile('成功', share(d.win), 'g')}
+        ${tile('失敗', share(d.lose), 'r')}
+        ${tile('引き分け（7）', share(d.draw))}
+        ${tile('W-UP した役の数', `${num(d.rounds)}回`)}
         ${tile('最高連続成功', `${num(d.maxStreak)}回`, 'g')}
         ${tile('カウンターストップ', `${num(d.cstop)}回`, 'g')}
-      </div><p class="legend">成功率の理論値は 50%（7 の引き分けを除く）</p></section>
+      </div><p class="legend">成功率＝成功 ÷（成功＋失敗）、理論値 50%。成功・失敗・引き分けの（ ）は勝負数に対する割合で、合計 100%（理論値 46.2% / 46.2% / 7.7%）。</p></section>
       <section><h3>HANDS</h3><table>
         <tr><th>役</th><th>回数</th><th>実測</th><th>理論</th><th></th></tr>${handRows}
       </table><p class="legend">色の棒＝実測、白い線＝理論値。ゲーム数が少ないうちは大きくぶれます。</p></section>
@@ -1206,6 +1236,14 @@ CARD IS 6 OR LESS
     credit = 0; saveCredit(); sfx.draw();
     toAttract();
   };
+  // 2-colour (red/black) <-> 4-colour deck; the label shows the scheme in use
+  function showColorMode() { $('colorBtn').textContent = fourColor ? '4COLOR' : '2COLOR'; }
+  $('colorBtn').onclick = () => {
+    fourColor = !fourColor;
+    store.set('retroPokerFourColor', fourColor);
+    showColorMode(); repaintCards(); sfx.hold();
+  };
+  showColorMode();
   $('muteBtn').onclick = () => {
     muted = !muted;
     $('muteBtn').textContent = muted ? 'SOUND OFF' : 'SOUND ON';
